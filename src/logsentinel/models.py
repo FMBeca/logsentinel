@@ -26,6 +26,22 @@ class AuthEvent:
     raw: str = ""
 
 
+@dataclass(frozen=True)
+class HttpEvent:
+    """A single normalized HTTP request from a web server access log."""
+
+    timestamp: datetime          # timezone-aware (access logs include the offset)
+    source_ip: str
+    method: str
+    path: str                    # request target, including the query string
+    protocol: str
+    status: int
+    size: int
+    referrer: str = ""
+    user_agent: str = ""
+    raw: str = ""
+
+
 @dataclass
 class Alert:
     """A detection produced by a detector."""
