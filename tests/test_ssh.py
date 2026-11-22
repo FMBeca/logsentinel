@@ -27,7 +27,7 @@ def test_parse_accepted_and_ignores_noise():
 
 
 def _alerts():
-    with SAMPLE.open() as f:
+    with SAMPLE.open(encoding="utf-8") as f:
         return {a.source_ip: a for a in detect(parse_lines(f, 2026))}
 
 
@@ -48,7 +48,7 @@ def test_no_false_positive_for_single_typo():
 
 
 def test_window_expiry():
-    with SAMPLE.open() as f:
+    with SAMPLE.open(encoding="utf-8") as f:
         cfg = BruteForceConfig(threshold=5, window=timedelta(seconds=5))
         assert detect(parse_lines(f, 2026), cfg) == []
 
