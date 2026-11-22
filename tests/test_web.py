@@ -84,7 +84,7 @@ def test_scanner_user_agents():
 
 
 def _alerts(cfg: WebConfig | None = None):
-    with SAMPLE.open() as f:
+    with SAMPLE.open(encoding="utf-8") as f:
         return {(a.rule_id, a.source_ip): a for a in detect(parse_lines(f), cfg)}
 
 

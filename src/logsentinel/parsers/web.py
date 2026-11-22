@@ -30,7 +30,7 @@ _TS_FORMAT = "%d/%b/%Y:%H:%M:%S %z"
 
 def parse_line(line: str) -> HttpEvent | None:
     """Parse one access-log line. Returns None if the line is not in a supported format."""
-    line = line.rstrip("\n")
+    line = line.rstrip("\r\n")   # also tolerate logs copied from Windows (CRLF)
     m = _LINE.match(line)
     if not m:
         return None
