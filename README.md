@@ -47,19 +47,13 @@ Example output:
     users: admin, oracle, pi, test, ubuntu
 ```
 
-```
-[HIGH] SQL injection attempt  (LS-WEB-001)
-    IP: 192.0.2.10  events: 2  MITRE: T1190
-    status: 200x2
-    > GET /login.php?user=admin%27%20OR%20%271%27%3D%271&pass=x
-    > GET /item?id=5%2527%2520OR%25201%253D1--
+Web log analysis of [`samples/access.log`](samples/access.log) — SQLi, Log4Shell, path traversal,
+XSS, and two wordlist scans, one of them hiding behind a browser User-Agent:
 
-[MEDIUM] Directory / file brute force  (LS-WEB-004)
-    IP: 203.0.113.120  events: 24  MITRE: T1595.003
-    status: 404x24
-    > GET /admin.php
-    > GET /backup.zip
-```
+<p align="center">
+  <img src="docs/demo-web.png" width="600"
+       alt="logsentinel web output: HIGH alerts for SQL injection, path traversal and Log4Shell, MEDIUM alerts for directory brute force and XSS, LOW alerts for gobuster, sqlmap and Nikto User-Agents">
+</p>
 
 Analyze your own server (read-only):
 
