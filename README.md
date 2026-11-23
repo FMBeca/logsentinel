@@ -119,6 +119,7 @@ src/logsentinel/
     └── web.py             # SQLi, XSS, traversal, scanners
 tests/                     # pytest suite (run in GitHub Actions)
 samples/                   # synthetic logs (RFC 5737 documentation IPs)
+scripts/gen_access_log.py  # regenerates samples/access.log (kept in sync by a test)
 ```
 
 ## Development
