@@ -27,6 +27,18 @@ class AuthEvent:
 
 
 @dataclass(frozen=True)
+class LogLine:
+    """Any syslog line (sshd, sudo, cron...), kept whole for keyword-based rules."""
+
+    timestamp: datetime
+    host: str
+    program: str                 # "sshd", "sudo", "CRON"...
+    message: str                 # text after "program[pid]: "
+    source_ip: str = "-"         # first remote address found in the message, if any
+    raw: str = ""
+
+
+@dataclass(frozen=True)
 class HttpEvent:
     """A single normalized HTTP request from a web server access log."""
 

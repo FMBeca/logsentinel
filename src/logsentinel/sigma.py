@@ -1,10 +1,11 @@
-"""Load Sigma-style YAML rules and match them against web server requests.
+"""Load Sigma-style YAML rules and match them against web requests and Linux auth logs.
 
 Sigma (https://github.com/SigmaHQ/sigma) is the common format SOC teams use to share
-detection rules. LogSentinel supports a deliberately small subset of it, enough for
-request-level web rules:
+detection rules. LogSentinel supports a deliberately small subset of it:
 
-* ``logsource``: ``category: webserver`` (``product`` apache / nginx or absent)
+* ``logsource``: ``category: webserver`` (``product`` apache / nginx or absent), or
+  ``product: linux`` with ``service: auth`` / ``sshd`` (keyword lists only, as in Sigma's
+  own Linux rules, since syslog lines have no standard fields)
 * fields from the Sigma web taxonomy: ``c-ip``, ``cs-method``, ``cs-uri``, ``cs-uri-stem``,
   ``cs-uri-query``, ``cs-version``, ``sc-status``, ``sc-bytes``, ``c-useragent``, ``cs-referer``
 * values: case-insensitive, ``*`` / ``?`` wildcards, lists mean OR, ``null`` means empty
@@ -28,9 +29,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from logsentinel.detectors.web import normalize
-from logsentinel.models import HttpEvent, Severity
+from logsentinel.models import HttpEvent, LogLine, Severity
 
-Predicate = Callable[[HttpEvent], bool]
+Predicate = Callable[[HttpEvent | LogLine], bool]
+
+WEB = "webserver"
+LINUX = "linux"
 
 
 class RuleError(ValueError):
@@ -80,9 +84,10 @@ class SigmaRule:
     severity: Severity
     mitre_technique: str
     source: str            # file the rule came from, for error messages and reports
+    logsource: str         # WEB or LINUX: which command the rule applies to
     _match: Predicate
 
-    def matches(self, event: HttpEvent) -> bool:
+    def matches(self, event: HttpEvent | LogLine) -> bool:
         return self._match(event)
 
 
@@ -153,30 +158,34 @@ def _field_predicate(key: str, values: object) -> Predicate:
     return pred
 
 
-def _keywords_predicate(words: list) -> Predicate:
+def _keywords_predicate(words: list, decode: bool) -> Predicate:
     if any(isinstance(w, (dict, list)) for w in words):
         raise RuleError("keyword lists must hold plain strings")
     patterns = [_value_pattern(w, {"contains"}) for w in words]
 
-    def pred(e: HttpEvent) -> bool:
-        candidates = (e.raw, normalize(e.raw))
+    def pred(e: HttpEvent | LogLine) -> bool:
+        candidates = (e.raw, normalize(e.raw)) if decode else (e.raw,)
         return any(p.search(c) for p in patterns for c in candidates)
 
     return pred
 
 
-def _selection(body: object) -> Predicate:
+def _selection(body: object, kind: str) -> Predicate:
     """A detection identifier: a map (AND of fields), a list of maps (OR), or keywords."""
+    if kind == LINUX:
+        if isinstance(body, list) and body and not any(isinstance(x, dict) for x in body):
+            return _keywords_predicate(body, decode=False)
+        raise RuleError("linux rules support keyword lists only (syslog lines have no standard fields)")
     if isinstance(body, dict):
         if not body:
             raise RuleError("empty selection")
         preds = [_field_predicate(str(k), v) for k, v in body.items()]
         return lambda e: all(p(e) for p in preds)
     if isinstance(body, list) and body and all(isinstance(x, dict) for x in body):
-        preds = [_selection(x) for x in body]
+        preds = [_selection(x, kind) for x in body]
         return lambda e: any(p(e) for p in preds)
     if isinstance(body, list) and body:
-        return _keywords_predicate(body)
+        return _keywords_predicate(body, decode=True)
     raise RuleError(f"unsupported selection: {body!r}")
 
 
@@ -273,6 +282,20 @@ def _mitre(tags: object) -> str:
     return ", ".join(found) or "-"
 
 
+def _logsource_kind(logsource: object) -> str:
+    if not isinstance(logsource, dict):
+        raise RuleError("'logsource' must be a mapping")
+    if logsource.get("category") == "webserver":
+        if logsource.get("product") not in (None, "apache", "nginx"):
+            raise RuleError(f"unsupported logsource product {logsource['product']!r}")
+        return WEB
+    if logsource.get("product") == "linux" and logsource.get("service") in ("auth", "sshd"):
+        return LINUX
+    raise RuleError(
+        "supported log sources: 'category: webserver', or 'product: linux' with 'service: auth' or 'sshd'"
+    )
+
+
 def load_rule(data: object, source: str = "<rule>") -> SigmaRule:
     """Build a rule from an already-parsed YAML document (a dict)."""
     try:
@@ -284,11 +307,7 @@ def load_rule(data: object, source: str = "<rule>") -> SigmaRule:
             if key not in data:
                 raise RuleError(f"missing required key {key!r}")
 
-        logsource = data["logsource"] or {}
-        if not isinstance(logsource, dict) or logsource.get("category") != "webserver":
-            raise RuleError("only 'logsource: category: webserver' rules are supported")
-        if logsource.get("product") not in (None, "apache", "nginx"):
-            raise RuleError(f"unsupported logsource product {logsource['product']!r}")
+        kind = _logsource_kind(data["logsource"])
 
         detection = data["detection"]
         if not isinstance(detection, dict):
@@ -298,7 +317,7 @@ def load_rule(data: object, source: str = "<rule>") -> SigmaRule:
         condition = detection.get("condition")
         if condition is None:
             raise RuleError("detection has no 'condition'")
-        selections = {str(k): _selection(v) for k, v in detection.items() if k != "condition"}
+        selections = {str(k): _selection(v, kind) for k, v in detection.items() if k != "condition"}
         conditions = condition if isinstance(condition, list) else [condition]
         preds = [_Condition(str(c), selections).parse() for c in conditions]
 
@@ -312,6 +331,7 @@ def load_rule(data: object, source: str = "<rule>") -> SigmaRule:
             severity=_SEVERITY[level],
             mitre_technique=_mitre(data.get("tags")),
             source=source,
+            logsource=kind,
             _match=preds[0] if len(preds) == 1 else (lambda e: any(p(e) for p in preds)),
         )
     except RuleError as exc:

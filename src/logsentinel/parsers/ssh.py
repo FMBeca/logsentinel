@@ -21,7 +21,7 @@ _PATTERNS = [
 ]
 
 
-def _parse_ts(ts: str, year: int) -> datetime:
+def parse_timestamp(ts: str, year: int) -> datetime:
     # Syslog omits the year, so the caller supplies it.
     return datetime.strptime(f"{year} {' '.join(ts.split())}", "%Y %b %d %H:%M:%S")
 
@@ -39,7 +39,7 @@ def parse_line(line: str, year: int | None = None) -> AuthEvent | None:
             # to avoid double counting.
             return None
         return AuthEvent(
-            timestamp=_parse_ts(m["ts"], year),
+            timestamp=parse_timestamp(m["ts"], year),
             host=m["host"],
             source_ip=m["ip"],
             username=m["user"],
