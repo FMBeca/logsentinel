@@ -202,8 +202,9 @@ a rule that loads but can never fire gives a false sense of coverage.
 
 ### SSH
 
-1. **Parse** — regexes normalize `sshd` lines (classic or RFC 3339 timestamps) into `AuthEvent`
-   objects (time, IP, user, success).
+1. **Parse** — regexes normalize OpenSSH lines into `AuthEvent` objects (time, IP, user, success).
+   Both timestamp formats are read, and so are the `sshd-session` / `sshd-auth` process names that
+   OpenSSH 9.8+ uses for login attempts. Checked against a real Ubuntu 26.04 / OpenSSH 10.2 log.
 2. **Sliding window** — for each source IP, failed attempts are kept in a time window.
    When the count crosses the threshold, an alert is raised.
 3. **Classify** — ≥3 distinct usernames ⇒ *password spraying*; otherwise *brute force*.
