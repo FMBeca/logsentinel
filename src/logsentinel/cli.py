@@ -3,6 +3,7 @@
     logsentinel ssh <logfile> [options]   # SSH auth logs
     logsentinel web <logfile> [options]   # Apache / Nginx access logs
     logsentinel web <logfile> --rules rules/web   # plus Sigma-style YAML rules
+    logsentinel web <logfile> --html report.html  # plus a self-contained HTML report
 
 Exit codes: 0 no alerts, 1 alerts found, 2 invalid rules.
 """
@@ -14,7 +15,7 @@ import sys
 from contextlib import nullcontext
 from datetime import timedelta
 
-from logsentinel import __version__, sigma
+from logsentinel import __version__, report, sigma
 from logsentinel.detectors import bruteforce, web
 from logsentinel.models import Alert, Severity
 from logsentinel.parsers import ssh as ssh_parser
@@ -61,6 +62,7 @@ def _add_common(p: argparse.ArgumentParser) -> None:
     p.add_argument("logfile", help="Path to the log file, or '-' for stdin")
     p.add_argument("--json", action="store_true", help="Output JSON")
     p.add_argument("--no-color", action="store_true")
+    p.add_argument("--html", metavar="FILE", help="Also write a self-contained HTML report to FILE")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -97,11 +99,20 @@ def main(argv: list[str] | None = None) -> int:
 
     with _open(args.logfile) as fh:
         if args.command == "ssh":
+            events = list(ssh_parser.parse_lines(fh, args.year))
             cfg = bruteforce.BruteForceConfig(threshold=args.threshold, window=timedelta(seconds=args.window))
-            alerts = bruteforce.detect(ssh_parser.parse_lines(fh, args.year), cfg)
+            alerts = bruteforce.detect(events, cfg)
         else:
+            events = list(web_parser.parse_lines(fh))
             cfg = web.WebConfig(scan_threshold=args.scan_threshold, scan_window=timedelta(seconds=args.scan_window))
-            alerts = web.detect(web_parser.parse_lines(fh), cfg, rules)
+            alerts = web.detect(events, cfg, rules)
+
+    if args.html:
+        log_type = "SSH auth log" if args.command == "ssh" else "Web server access log"
+        page = report.render_html(alerts, source=args.logfile, log_type=log_type, events=len(events), rules=len(rules))
+        with open(args.html, "w", encoding="utf-8") as out:
+            out.write(page)
+        print(f"HTML report written to {args.html}", file=sys.stderr)
 
     if args.json:
         print(json.dumps([a.to_dict() for a in alerts], indent=2))

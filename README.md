@@ -22,7 +22,7 @@ under the hood — the same ideas SIEMs like Splunk, Elastic or Wazuh apply at s
 | Known scanner User-Agents (Nikto, sqlmap, gobuster, ffuf…) | LS-WEB-005 | [T1595.002](https://attack.mitre.org/techniques/T1595/002/) | ✅ |
 | Log4Shell ([CVE-2021-44228](https://nvd.nist.gov/vuln/detail/CVE-2021-44228)), incl. obfuscated payloads in headers | LS-WEB-006 | [T1190](https://attack.mitre.org/techniques/T1190/) | ✅ |
 | Custom rules in Sigma format (web subset) | rule `id` | from the rule's `attack.tXXXX` tags | ✅ |
-| HTML report | — | — | 🚧 planned |
+| Self-contained HTML report (`--html`) | — | — | ✅ |
 
 ## Quick start
 
@@ -70,9 +70,24 @@ sudo logsentinel web /var/log/apache2/access.log --json
 | `ssh` | `--threshold N` (default 5), `--window SECONDS` (default 300), `--year YYYY` |
 | `web` | `--scan-threshold N` distinct 403/404 paths (default 20), `--scan-window SECONDS` (default 60), `--rules PATH` (repeatable) |
 
-Both accept `--json`, `--no-color` and `-` to read from stdin.
+Both accept `--json`, `--no-color`, `--html FILE` and `-` to read from stdin.
 The exit code is `1` when threats are found, so it can be used in scripts and cron jobs,
 and `2` when a rule file cannot be loaded.
+
+## HTML report
+
+```bash
+logsentinel web samples/access.log --rules rules/web --html report.html
+```
+
+`--html` writes a single file that opens in any browser, works offline and can be attached to a
+ticket: a summary by severity, the MITRE ATT&CK techniques seen (linked to attack.mitre.org) and every
+alert with its evidence. The console output and exit code stay the same.
+
+Log lines are attacker-controlled, so a report that pasted them into HTML would run an attacker's XSS
+payload in the analyst's browser. Every value is HTML-escaped, and the page carries a
+Content-Security-Policy that blocks scripts and remote resources as a second layer; the tests feed
+XSS payloads through every field of an alert to check both.
 
 ## Custom rules (Sigma format)
 
@@ -156,6 +171,7 @@ src/logsentinel/
 ├── cli.py                 # command-line interface
 ├── models.py              # AuthEvent, HttpEvent, Alert, Severity
 ├── sigma.py               # Sigma-style YAML rule loader and matcher
+├── report.py              # self-contained HTML report
 ├── parsers/
 │   ├── ssh.py             # OpenSSH log parser
 │   └── web.py             # Apache/Nginx access log parser
@@ -180,7 +196,7 @@ pytest -v && ruff check .
 - [x] SSH brute force / spraying / compromise detection
 - [x] Apache/Nginx parser with SQLi, XSS, path traversal and scanner detection
 - [x] Custom rules in Sigma format (web subset)
-- [ ] HTML report
+- [x] HTML report
 - [ ] IP reputation enrichment (AbuseIPDB)
 
 ## License
