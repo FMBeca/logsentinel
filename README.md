@@ -23,6 +23,7 @@ under the hood — the same ideas SIEMs like Splunk, Elastic or Wazuh apply at s
 | Log4Shell ([CVE-2021-44228](https://nvd.nist.gov/vuln/detail/CVE-2021-44228)), incl. obfuscated payloads in headers | LS-WEB-006 | [T1190](https://attack.mitre.org/techniques/T1190/) | ✅ |
 | Custom rules in Sigma format (web and sshd subsets) | rule `id` | from the rule's `attack.tXXXX` tags | ✅ |
 | Self-contained HTML report (`--html`) | — | — | ✅ |
+| IP reputation from AbuseIPDB (`--enrich`, opt-in) | — | — | ✅ |
 
 ## Quick start
 
@@ -70,9 +71,9 @@ sudo logsentinel web /var/log/apache2/access.log --json
 | `ssh` | `--threshold N` (default 5), `--window SECONDS` (default 300), `--year YYYY` |
 | `web` | `--scan-threshold N` distinct 403/404 paths (default 20), `--scan-window SECONDS` (default 60) |
 
-Both accept `--rules PATH` (repeatable), `--json`, `--no-color`, `--html FILE` and `-` to read from stdin.
+Both accept `--rules PATH` (repeatable), `--enrich`, `--json`, `--no-color`, `--html FILE` and `-` to read from stdin.
 The exit code is `1` when threats are found, so it can be used in scripts and cron jobs,
-and `2` when a rule file cannot be loaded.
+and `2` when a rule file cannot be loaded or `--enrich` has no API key.
 
 ## HTML report
 
@@ -93,6 +94,33 @@ Log lines are attacker-controlled, so a report that pasted them into HTML would 
 payload in the analyst's browser. Every value is HTML-escaped, and the page carries a
 Content-Security-Policy that blocks scripts and remote resources as a second layer; the tests feed
 XSS payloads through every field of an alert to check both.
+
+## IP reputation (AbuseIPDB)
+
+`--enrich` adds the [AbuseIPDB](https://www.abuseipdb.com) reputation of each source IP to the
+alerts: abuse confidence score, number of reports, country, ISP and Tor exit node flag. It is off by
+default because it sends IP addresses to a third party and needs a free API key:
+
+```powershell
+$env:ABUSEIPDB_API_KEY = "<your key>"           # PowerShell; on Linux: export ABUSEIPDB_API_KEY=...
+logsentinel ssh /var/log/auth.log --enrich --html report.html
+```
+
+Example output (illustrative values; documentation IPs like this one are never actually looked up):
+
+```
+[CRITICAL] Successful login after SSH brute force  (LS-SSH-001)
+    IP: 203.0.113.5  events: 6  MITRE: T1110.001, T1078
+    reputation: 100/100 abuse score · 42 reports · NL · Example Hosting (AbuseIPDB)
+```
+
+- The key is read from the `ABUSEIPDB_API_KEY` environment variable only: a command-line argument
+  would be saved in shell history and visible in the process list. It is sent in a header, never in the URL.
+- Only globally routable addresses are looked up. Private, loopback and documentation ranges
+  (including every IP in `samples/`) never leave the machine, and each IP is queried once per run.
+- Enrichment never blocks detection: a rejected key, an exhausted quota or no network produce a
+  warning, and the alerts are reported without reputation data.
+- Reputation text comes from a third party, so the HTML report escapes it like log content.
 
 ## Custom rules (Sigma format)
 
@@ -204,6 +232,7 @@ src/logsentinel/
 ├── models.py              # AuthEvent, LogLine, HttpEvent, Alert, Severity
 ├── sigma.py               # Sigma-style YAML rule loader and matcher
 ├── report.py              # self-contained HTML report
+├── enrich.py              # optional AbuseIPDB IP reputation
 ├── parsers/
 │   ├── ssh.py             # OpenSSH login attempts
 │   ├── syslog.py          # any syslog line, for keyword rules
@@ -232,7 +261,7 @@ pytest -v && ruff check .
 - [x] Custom rules in Sigma format (web subset)
 - [x] Sigma keyword rules for sshd logs
 - [x] HTML report
-- [ ] IP reputation enrichment (AbuseIPDB, opt-in, needs an API key)
+- [x] IP reputation enrichment (AbuseIPDB, opt-in)
 
 ## License
 

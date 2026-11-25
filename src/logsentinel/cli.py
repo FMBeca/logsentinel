@@ -4,23 +4,26 @@
     logsentinel web <logfile> [options]   # Apache / Nginx access logs
     logsentinel web <logfile> --rules rules/      # plus Sigma-style YAML rules (ssh too)
     logsentinel web <logfile> --html report.html  # plus a self-contained HTML report
+    logsentinel web <logfile> --enrich            # plus AbuseIPDB reputation ($ABUSEIPDB_API_KEY)
 
-Exit codes: 0 no alerts, 1 alerts found, 2 invalid rules.
+Exit codes: 0 no alerts, 1 alerts found, 2 invalid rules or missing API key.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from contextlib import nullcontext
 from datetime import timedelta
 
-from logsentinel import __version__, report, sigma
+from logsentinel import __version__, enrich, report, sigma
 from logsentinel.detectors import bruteforce, linux, web
 from logsentinel.models import Alert, Severity
 from logsentinel.parsers import ssh as ssh_parser
 from logsentinel.parsers import syslog as syslog_parser
 from logsentinel.parsers import web as web_parser
+from logsentinel.report import reputation_summary
 
 _COLORS = {"low": "\033[36m", "medium": "\033[33m", "high": "\033[31m", "critical": "\033[1;41m"}
 _RESET = "\033[0m"
@@ -48,6 +51,8 @@ def _print_table(alerts: list[Alert], color: bool) -> None:
             print("    status: " + ", ".join(f"{k}x{v}" for k, v in sorted(d["status_codes"].items())))
         if "user_agent" in d:
             print(f"    user-agent: {d['user_agent']}")
+        if "reputation" in d:
+            print(f"    reputation: {reputation_summary(d['reputation'])}")
         for s in d.get("samples", []):
             print(f"    > {s[:120]}")
         print()
@@ -66,6 +71,8 @@ def _add_common(p: argparse.ArgumentParser) -> None:
     p.add_argument("--html", metavar="FILE", help="Also write a self-contained HTML report to FILE")
     p.add_argument("--rules", action="append", metavar="PATH", default=[],
                    help="Sigma-style YAML rule file or directory; repeatable (needs PyYAML)")
+    p.add_argument("--enrich", action="store_true",
+                   help=f"Look up public source IPs on AbuseIPDB (API key in ${enrich.ENV_KEY})")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -89,6 +96,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    client = None
+    if args.enrich:       # fail fast, before reading a possibly large log
+        try:
+            client = enrich.AbuseIPDB(os.environ.get(enrich.ENV_KEY, ""))
+        except enrich.EnrichError as exc:
+            print(f"logsentinel: {exc}", file=sys.stderr)
+            return 2
 
     rules = []
     if args.rules:
@@ -115,6 +130,13 @@ def main(argv: list[str] | None = None) -> int:
             events = list(web_parser.parse_lines(fh))
             cfg = web.WebConfig(scan_threshold=args.scan_threshold, scan_window=timedelta(seconds=args.scan_window))
             alerts = web.detect(events, cfg, rules)
+
+    if client is not None:
+        enriched = enrich.enrich(alerts, client)
+        for warning in client.warnings:
+            print(f"logsentinel: {warning}", file=sys.stderr)
+        print(f"logsentinel: AbuseIPDB lookups: {client.lookups}, alerts enriched: {enriched} "
+              "(private and documentation IPs are never sent)", file=sys.stderr)
 
     if args.html:
         log_type = "SSH auth log" if args.command == "ssh" else "Web server access log"
