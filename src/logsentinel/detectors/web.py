@@ -15,12 +15,16 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict, deque
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
+from typing import TYPE_CHECKING
 from urllib.parse import unquote_plus
 
 from logsentinel.models import Alert, HttpEvent, Severity
+
+if TYPE_CHECKING:  # sigma imports normalize() from here, so only import it for type hints
+    from logsentinel.sigma import SigmaRule
 
 MAX_SAMPLES = 5
 
@@ -29,7 +33,8 @@ MAX_SAMPLES = 5
 class Signature:
     """A detection rule matched against a single request.
 
-    Rules are plain data on purpose: a later phase loads them from YAML files.
+    Built-in rules stay in Python so they work with no dependencies; extra rules can be
+    loaded from Sigma-style YAML files (see logsentinel.sigma).
     """
 
     rule_id: str
@@ -197,7 +202,9 @@ class _Alerts:
         return list(self._by_key.values())
 
 
-def detect(events: Iterable[HttpEvent], config: WebConfig | None = None) -> list[Alert]:
+def detect(events: Iterable[HttpEvent], config: WebConfig | None = None,
+           rules: Sequence[SigmaRule] = ()) -> list[Alert]:
+    """Run the built-in detections, plus any Sigma-style rules loaded by the user."""
     cfg = config or WebConfig()
     alerts = _Alerts()
     # Per IP: recent requests that got a 403/404.
@@ -209,6 +216,10 @@ def detect(events: Iterable[HttpEvent], config: WebConfig | None = None) -> list
             # When the payload is in a header, show that header as the evidence.
             sample = None if fld == "path" else f"{ev.method} {ev.path}  [{fld}: {getattr(ev, fld)}]"
             alerts.hit(ev, sig.rule_id, sig.title, sig.severity, sig.mitre_technique, sample=sample)
+
+        for rule in rules:
+            if rule.matches(ev):
+                alerts.hit(ev, rule.rule_id, rule.title, rule.severity, rule.mitre_technique)
 
         tool = match_scanner(ev.user_agent)
         if tool:
