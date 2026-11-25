@@ -21,7 +21,7 @@ under the hood — the same ideas SIEMs like Splunk, Elastic or Wazuh apply at s
 | Directory / file brute force (behavioural) | LS-WEB-004 | [T1595.003](https://attack.mitre.org/techniques/T1595/003/) | ✅ |
 | Known scanner User-Agents (Nikto, sqlmap, gobuster, ffuf…) | LS-WEB-005 | [T1595.002](https://attack.mitre.org/techniques/T1595/002/) | ✅ |
 | Log4Shell ([CVE-2021-44228](https://nvd.nist.gov/vuln/detail/CVE-2021-44228)), incl. obfuscated payloads in headers | LS-WEB-006 | [T1190](https://attack.mitre.org/techniques/T1190/) | ✅ |
-| Custom rules in Sigma format (web subset) | rule `id` | from the rule's `attack.tXXXX` tags | ✅ |
+| Custom rules in Sigma format (web and sshd subsets) | rule `id` | from the rule's `attack.tXXXX` tags | ✅ |
 | Self-contained HTML report (`--html`) | — | — | ✅ |
 
 ## Quick start
@@ -31,7 +31,7 @@ git clone https://github.com/FMBeca/logsentinel.git
 cd logsentinel
 pip install -e ".[yaml]"          # or just "." if you don't need Sigma rule files
 logsentinel ssh samples/auth.log --year 2026
-logsentinel web samples/access.log --rules rules/web --html report.html
+logsentinel web samples/access.log --rules rules/ --html report.html
 ```
 
 Example output:
@@ -68,16 +68,16 @@ sudo logsentinel web /var/log/apache2/access.log --json
 | Command | Options |
 |---|---|
 | `ssh` | `--threshold N` (default 5), `--window SECONDS` (default 300), `--year YYYY` |
-| `web` | `--scan-threshold N` distinct 403/404 paths (default 20), `--scan-window SECONDS` (default 60), `--rules PATH` (repeatable) |
+| `web` | `--scan-threshold N` distinct 403/404 paths (default 20), `--scan-window SECONDS` (default 60) |
 
-Both accept `--json`, `--no-color`, `--html FILE` and `-` to read from stdin.
+Both accept `--rules PATH` (repeatable), `--json`, `--no-color`, `--html FILE` and `-` to read from stdin.
 The exit code is `1` when threats are found, so it can be used in scripts and cron jobs,
 and `2` when a rule file cannot be loaded.
 
 ## HTML report
 
 ```bash
-logsentinel web samples/access.log --rules rules/web --html report.html
+logsentinel web samples/access.log --rules rules/ --html report.html
 ```
 
 `--html` writes a single file that opens in any browser, works offline and can be attached to a
@@ -97,11 +97,13 @@ XSS payloads through every field of an alert to check both.
 ## Custom rules (Sigma format)
 
 [Sigma](https://github.com/SigmaHQ/sigma) is the open format SOC teams use to share detection
-rules. The `web` command can load extra rules written in a subset of it, on top of the built-in ones:
+rules. Both commands can load extra rules written in a subset of it, on top of the built-in ones.
+A rules folder can mix both kinds: each command keeps the rules for its own log source.
 
 ```bash
 pip install -e ".[yaml]"                      # PyYAML is only needed for rule files
-logsentinel web samples/access.log --rules rules/web
+logsentinel web samples/access.log --rules rules/
+logsentinel ssh samples/auth.log --year 2026 --rules rules/
 ```
 
 ```yaml
@@ -120,12 +122,36 @@ detection:
 level: high
 ```
 
-Two example rules live in [`rules/web/`](rules/web): web shell access (T1505.003) and probes for
-backups, database dumps and `.env` / `.git` files (T1552.001).
+Linux rules follow Sigma's own convention for syslog: keyword lists searched in each line, since
+these lines have no standard fields. sshd logs much more than logins, and these lines catch what the
+brute-force detector cannot see:
+
+```yaml
+title: SSH port scan or banner grab
+tags: [attack.reconnaissance, attack.t1595]
+logsource:
+  product: linux
+  service: sshd
+detection:
+  keywords:
+    - Did not receive identification string from
+    - Bad protocol version identification
+  condition: keywords
+level: low
+```
+
+Example rules:
+
+| Rule | Log | MITRE ATT&CK |
+|---|---|---|
+| [Web shell access attempt](rules/web/webshell_access.yml) | web | T1505.003 |
+| [Probe for backup, dump or secrets files](rules/web/sensitive_file_probe.yml) (`.bak`, `.sql`, `.env`, `.git`) | web | T1552.001 |
+| [SSH port scan or banner grab](rules/linux/sshd_scan_banner_grab.yml) | sshd | T1595 |
+| [Suspicious OpenSSH protocol or crypto error](rules/linux/sshd_suspicious_errors.yml) (exploit attempts, fuzzing) | sshd | T1190 |
 
 | Supported | |
 |---|---|
-| Log source | `category: webserver` (`product: apache` / `nginx` or none) |
+| Log source | `category: webserver` (`product: apache` / `nginx` or none); `product: linux` with `service: sshd` / `auth` (keywords only) |
 | Fields | `c-ip`, `cs-method`, `cs-uri`, `cs-uri-stem`, `cs-uri-query`, `cs-version`, `sc-status`, `sc-bytes`, `c-useragent`, `cs-referer` |
 | Values | case-insensitive, `*` / `?` wildcards, lists (OR), `null`, keyword lists (raw line) |
 | Modifiers | `contains`, `startswith`, `endswith`, `all`, `re` (`re\|i` for case-insensitive) |
@@ -175,16 +201,18 @@ auth.log ─► parser ─► AuthEvent stream ─► detector (sliding window p
 ```
 src/logsentinel/
 ├── cli.py                 # command-line interface
-├── models.py              # AuthEvent, HttpEvent, Alert, Severity
+├── models.py              # AuthEvent, LogLine, HttpEvent, Alert, Severity
 ├── sigma.py               # Sigma-style YAML rule loader and matcher
 ├── report.py              # self-contained HTML report
 ├── parsers/
-│   ├── ssh.py             # OpenSSH log parser
+│   ├── ssh.py             # OpenSSH login attempts
+│   ├── syslog.py          # any syslog line, for keyword rules
 │   └── web.py             # Apache/Nginx access log parser
 └── detectors/
     ├── bruteforce.py      # SSH brute force / spraying
+    ├── linux.py           # Sigma keyword rules on syslog lines
     └── web.py             # SQLi, XSS, traversal, scanners
-rules/web/                 # example rules in Sigma format
+rules/web/, rules/linux/   # example rules in Sigma format
 tests/                     # pytest suite (run in GitHub Actions)
 samples/                   # synthetic logs (RFC 5737 documentation IPs)
 scripts/gen_access_log.py  # regenerates samples/access.log (kept in sync by a test)
@@ -202,9 +230,9 @@ pytest -v && ruff check .
 - [x] SSH brute force / spraying / compromise detection
 - [x] Apache/Nginx parser with SQLi, XSS, path traversal and scanner detection
 - [x] Custom rules in Sigma format (web subset)
+- [x] Sigma keyword rules for sshd logs
 - [x] HTML report
 - [ ] IP reputation enrichment (AbuseIPDB, opt-in, needs an API key)
-- [ ] Sigma rules for SSH / Linux auth logs
 
 ## License
 
