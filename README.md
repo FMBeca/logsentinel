@@ -8,6 +8,44 @@
 and maps every alert to **MITRE ATT&CK**. It's built to show how SOC detection logic works
 under the hood — the same ideas SIEMs like Splunk, Elastic or Wazuh apply at scale.
 
+## What it does, in plain terms
+
+Servers keep a log of everything that happens to them: every login attempt, every page requested.
+Attacks leave traces in those logs, but the traces are buried among thousands of normal lines that
+nobody has time to read. LogSentinel reads the log and points out the lines that matter, for example:
+
+- dozens of wrong passwords for the same account in a couple of minutes: someone is guessing it;
+- one password tried against many different accounts: someone is looking for a weak one;
+- a successful login right after a burst of failures: the attacker probably got in;
+- requests built to trick a website into running commands, or that probe hundreds of paths
+  looking for one that was left unprotected.
+
+Each finding is ranked by severity and labelled with its MITRE ATT&CK technique, the shared
+catalogue security teams use to describe attacker behaviour. LogSentinel does not block anything:
+it reports what happened, so that someone can respond.
+
+## Where it fits
+
+- **Small servers without a security team** (a VPS, a small business website, a homelab).
+  Run it daily from cron: the exit code is `1` when something is found, so a script can send an email.
+- **First triage after an incident.** "Did anyone get in?" Run it on a copy of the logs to get a
+  ranked list of source IPs, times and evidence, and attach the HTML report to the incident ticket.
+- **Labs, training and purple teaming.** Attack your own lab and see which traces each technique
+  leaves; after an authorised test, show which attacks were detectable and which were not.
+- **Trying detection rules.** Test a Sigma rule against sample logs before deploying it elsewhere.
+
+It is not a SIEM. A SIEM collects logs from every system in real time and correlates events across
+sources (firewall, Windows, VPN, cloud). LogSentinel analyses one log file at a time, after the fact.
+What it shares with a SIEM is the core logic, small enough to read end to end: parse the log,
+detect attack patterns, map them to ATT&CK and report.
+
+| | LogSentinel | SIEM |
+|---|---|---|
+| When | After the fact, one file at a time | Continuously, in real time |
+| Scope | SSH and web server logs | Every log source in the organisation |
+| Correlation | Within one log | Across systems and sources |
+| Cost | Free, runs on a laptop | Licences, infrastructure and a team to run it |
+
 ## Features
 
 | Detection | Rule | MITRE ATT&CK | Status |
