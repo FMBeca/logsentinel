@@ -2,7 +2,7 @@
 
     logsentinel ssh <logfile> [options]   # SSH auth logs
     logsentinel web <logfile> [options]   # Apache / Nginx access logs
-    logsentinel web <logfile> --rules rules/web   # plus Sigma-style YAML rules
+    logsentinel web <logfile> --rules rules/      # plus Sigma-style YAML rules (ssh too)
     logsentinel web <logfile> --html report.html  # plus a self-contained HTML report
 
 Exit codes: 0 no alerts, 1 alerts found, 2 invalid rules.
@@ -16,9 +16,10 @@ from contextlib import nullcontext
 from datetime import timedelta
 
 from logsentinel import __version__, report, sigma
-from logsentinel.detectors import bruteforce, web
+from logsentinel.detectors import bruteforce, linux, web
 from logsentinel.models import Alert, Severity
 from logsentinel.parsers import ssh as ssh_parser
+from logsentinel.parsers import syslog as syslog_parser
 from logsentinel.parsers import web as web_parser
 
 _COLORS = {"low": "\033[36m", "medium": "\033[33m", "high": "\033[31m", "critical": "\033[1;41m"}
@@ -63,6 +64,8 @@ def _add_common(p: argparse.ArgumentParser) -> None:
     p.add_argument("--json", action="store_true", help="Output JSON")
     p.add_argument("--no-color", action="store_true")
     p.add_argument("--html", metavar="FILE", help="Also write a self-contained HTML report to FILE")
+    p.add_argument("--rules", action="append", metavar="PATH", default=[],
+                   help="Sigma-style YAML rule file or directory; repeatable (needs PyYAML)")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -81,8 +84,6 @@ def build_parser() -> argparse.ArgumentParser:
     w.add_argument("--scan-threshold", type=int, default=20,
                    help="Distinct 403/404 paths to flag directory brute force (default 20)")
     w.add_argument("--scan-window", type=int, default=60, help="Window in seconds (default 60)")
-    w.add_argument("--rules", action="append", metavar="PATH", default=[],
-                   help="Sigma-style YAML rule file or directory; repeatable (needs PyYAML)")
     return p
 
 
@@ -90,18 +91,26 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
     rules = []
-    if getattr(args, "rules", None):
+    if args.rules:
         try:
-            rules = sigma.load_rules(args.rules)
+            loaded = sigma.load_rules(args.rules)
         except sigma.RuleError as exc:
             print(f"logsentinel: {exc}", file=sys.stderr)
             return 2
+        # A rules folder may hold rules for both log types: keep the ones for this command.
+        kind = sigma.LINUX if args.command == "ssh" else sigma.WEB
+        rules = [r for r in loaded if r.logsource == kind]
+        if len(rules) < len(loaded):
+            print(f"logsentinel: skipped {len(loaded) - len(rules)} rule(s) for other log sources", file=sys.stderr)
 
     with _open(args.logfile) as fh:
         if args.command == "ssh":
-            events = list(ssh_parser.parse_lines(fh, args.year))
+            lines = list(fh)
+            events = list(ssh_parser.parse_lines(lines, args.year))
             cfg = bruteforce.BruteForceConfig(threshold=args.threshold, window=timedelta(seconds=args.window))
             alerts = bruteforce.detect(events, cfg)
+            if rules:
+                alerts += linux.detect(syslog_parser.parse_lines(lines, args.year), rules)
         else:
             events = list(web_parser.parse_lines(fh))
             cfg = web.WebConfig(scan_threshold=args.scan_threshold, scan_window=timedelta(seconds=args.scan_window))

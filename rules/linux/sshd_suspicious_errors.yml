@@ -1,0 +1,34 @@
+title: Suspicious OpenSSH protocol or crypto error
+id: 440409ac-322c-4143-829e-3934fc11649e
+status: experimental
+description: >
+  sshd errors that normal clients do not produce: malformed keys, corrupted MACs, bad
+  Diffie-Hellman values. They are typical of exploit attempts and fuzzing against the SSH
+  service itself. Inspired by the SigmaHQ rule "Suspicious OpenSSH Daemon Error".
+author: LogSentinel
+date: 2026-11-25
+references:
+  - https://github.com/SigmaHQ/sigma/tree/master/rules/linux/builtin/sshd
+tags:
+  - attack.initial_access
+  - attack.t1190
+logsource:
+  product: linux
+  service: sshd
+detection:
+  keywords:
+    - unexpected internal error
+    - unknown or unsupported key type
+    - invalid certificate signing key
+    - invalid elliptic curve value
+    - incorrect signature
+    - error in libcrypto
+    - unexpected bytes remain after decoding
+    - 'fatal: buffer_get_string: bad string'
+    - 'Local: crc32 compensation attack'
+    - bad client public DH value
+    - Corrupted MAC on input
+  condition: keywords
+falsepositives:
+  - Old or broken SSH clients
+level: medium

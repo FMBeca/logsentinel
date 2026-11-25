@@ -1,0 +1,25 @@
+title: SSH port scan or banner grab
+id: 5ee81e43-462a-4880-9a49-70e5248a6d3f
+status: experimental
+description: >
+  A client connected to sshd but never completed the SSH handshake. Port scanners and
+  banner grabbers (nmap -sV, masscan, netcat) leave these lines when they read the server
+  version and disconnect.
+author: LogSentinel
+date: 2026-11-25
+tags:
+  - attack.reconnaissance
+  - attack.t1595
+logsource:
+  product: linux
+  service: sshd
+detection:
+  keywords:
+    - Did not receive identification string from
+    - Bad protocol version identification
+    - 'kex_exchange_identification: Connection closed by remote host'
+    - 'banner exchange: Connection from'
+  condition: keywords
+falsepositives:
+  - Load balancer or monitoring health checks that only open the TCP port
+level: low
