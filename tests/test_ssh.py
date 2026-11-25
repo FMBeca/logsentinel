@@ -35,7 +35,21 @@ def test_detects_bruteforce_then_compromise():
     a = _alerts()["203.0.113.5"]
     assert a.severity is Severity.CRITICAL
     assert a.details["compromised_user"] == "root"
-    assert a.mitre_technique == "T1110.001"
+    assert a.mitre_technique == "T1110.001, T1078"
+
+
+def test_spraying_then_success_keeps_spraying_technique():
+    lines = [f"Nov 22 15:00:0{i} srv1 sshd[1]: Failed password for invalid user u{i} from 192.0.2.9 port 1 ssh2"
+             for i in range(5)]
+    lines.append("Nov 22 15:00:09 srv1 sshd[1]: Accepted password for u4 from 192.0.2.9 port 1 ssh2")
+    (a,) = detect(parse_lines(lines, 2026))
+    assert a.severity is Severity.CRITICAL
+    assert a.mitre_technique == "T1110.003, T1078"
+
+
+def test_success_without_brute_force_is_not_an_alert():
+    ok = ["Nov 22 15:00:00 srv1 sshd[1]: Accepted publickey for alice from 198.51.100.7 port 1 ssh2"]
+    assert detect(parse_lines(ok, 2026)) == []
 
 
 def test_detects_password_spraying():
