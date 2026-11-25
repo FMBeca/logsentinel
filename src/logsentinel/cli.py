@@ -2,6 +2,9 @@
 
     logsentinel ssh <logfile> [options]   # SSH auth logs
     logsentinel web <logfile> [options]   # Apache / Nginx access logs
+    logsentinel web <logfile> --rules rules/web   # plus Sigma-style YAML rules
+
+Exit codes: 0 no alerts, 1 alerts found, 2 invalid rules.
 """
 from __future__ import annotations
 
@@ -11,7 +14,7 @@ import sys
 from contextlib import nullcontext
 from datetime import timedelta
 
-from logsentinel import __version__
+from logsentinel import __version__, sigma
 from logsentinel.detectors import bruteforce, web
 from logsentinel.models import Alert, Severity
 from logsentinel.parsers import ssh as ssh_parser
@@ -76,11 +79,21 @@ def build_parser() -> argparse.ArgumentParser:
     w.add_argument("--scan-threshold", type=int, default=20,
                    help="Distinct 403/404 paths to flag directory brute force (default 20)")
     w.add_argument("--scan-window", type=int, default=60, help="Window in seconds (default 60)")
+    w.add_argument("--rules", action="append", metavar="PATH", default=[],
+                   help="Sigma-style YAML rule file or directory; repeatable (needs PyYAML)")
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    rules = []
+    if getattr(args, "rules", None):
+        try:
+            rules = sigma.load_rules(args.rules)
+        except sigma.RuleError as exc:
+            print(f"logsentinel: {exc}", file=sys.stderr)
+            return 2
 
     with _open(args.logfile) as fh:
         if args.command == "ssh":
@@ -88,7 +101,7 @@ def main(argv: list[str] | None = None) -> int:
             alerts = bruteforce.detect(ssh_parser.parse_lines(fh, args.year), cfg)
         else:
             cfg = web.WebConfig(scan_threshold=args.scan_threshold, scan_window=timedelta(seconds=args.scan_window))
-            alerts = web.detect(web_parser.parse_lines(fh), cfg)
+            alerts = web.detect(web_parser.parse_lines(fh), cfg, rules)
 
     if args.json:
         print(json.dumps([a.to_dict() for a in alerts], indent=2))

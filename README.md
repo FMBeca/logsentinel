@@ -4,7 +4,7 @@
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-**LogSentinel** is a lightweight, dependency-free CLI that detects attacks in Linux and web server log files
+**LogSentinel** is a lightweight CLI with no required dependencies that detects attacks in Linux and web server log files
 and maps every alert to **MITRE ATT&CK**. It's built to show how SOC detection logic works
 under the hood — the same ideas SIEMs like Splunk, Elastic or Wazuh apply at scale.
 
@@ -21,7 +21,8 @@ under the hood — the same ideas SIEMs like Splunk, Elastic or Wazuh apply at s
 | Directory / file brute force (behavioural) | LS-WEB-004 | [T1595.003](https://attack.mitre.org/techniques/T1595/003/) | ✅ |
 | Known scanner User-Agents (Nikto, sqlmap, gobuster, ffuf…) | LS-WEB-005 | [T1595.002](https://attack.mitre.org/techniques/T1595/002/) | ✅ |
 | Log4Shell ([CVE-2021-44228](https://nvd.nist.gov/vuln/detail/CVE-2021-44228)), incl. obfuscated payloads in headers | LS-WEB-006 | [T1190](https://attack.mitre.org/techniques/T1190/) | ✅ |
-| YAML-configurable rules | — | — | 🚧 planned |
+| Custom rules in Sigma format (web subset) | rule `id` | from the rule's `attack.tXXXX` tags | ✅ |
+| HTML report | — | — | 🚧 planned |
 
 ## Quick start
 
@@ -67,10 +68,53 @@ sudo logsentinel web /var/log/apache2/access.log --json
 | Command | Options |
 |---|---|
 | `ssh` | `--threshold N` (default 5), `--window SECONDS` (default 300), `--year YYYY` |
-| `web` | `--scan-threshold N` distinct 403/404 paths (default 20), `--scan-window SECONDS` (default 60) |
+| `web` | `--scan-threshold N` distinct 403/404 paths (default 20), `--scan-window SECONDS` (default 60), `--rules PATH` (repeatable) |
 
 Both accept `--json`, `--no-color` and `-` to read from stdin.
-The exit code is `1` when threats are found, so it can be used in scripts and cron jobs.
+The exit code is `1` when threats are found, so it can be used in scripts and cron jobs,
+and `2` when a rule file cannot be loaded.
+
+## Custom rules (Sigma format)
+
+[Sigma](https://github.com/SigmaHQ/sigma) is the open format SOC teams use to share detection
+rules. The `web` command can load extra rules written in a subset of it, on top of the built-in ones:
+
+```bash
+pip install -e ".[yaml]"                      # PyYAML is only needed for rule files
+logsentinel web samples/access.log --rules rules/web
+```
+
+```yaml
+title: Web shell access attempt
+id: 81e90d38-7eac-48ec-9c90-939a75ecabb4
+tags: [attack.persistence, attack.t1505.003]
+logsource:
+  category: webserver
+detection:
+  selection_name:
+    cs-uri-stem|endswith: [/shell.php, /cmd.php, /c99.php]
+  selection_param:
+    cs-uri-stem|endswith: .php
+    cs-uri-query|contains: [cmd=, exec=]
+  condition: 1 of selection_*
+level: high
+```
+
+Two example rules live in [`rules/web/`](rules/web): web shell access (T1505.003) and probes for
+backups, database dumps and `.env` / `.git` files (T1552.001).
+
+| Supported | |
+|---|---|
+| Log source | `category: webserver` (`product: apache` / `nginx` or none) |
+| Fields | `c-ip`, `cs-method`, `cs-uri`, `cs-uri-stem`, `cs-uri-query`, `cs-version`, `sc-status`, `sc-bytes`, `c-useragent`, `cs-referer` |
+| Values | case-insensitive, `*` / `?` wildcards, lists (OR), `null`, keyword lists (raw line) |
+| Modifiers | `contains`, `startswith`, `endswith`, `all`, `re` (`re\|i` for case-insensitive) |
+| Conditions | `and`, `or`, `not`, parentheses, `1 of x*`, `all of x*`, `1 of them`, `all of them` |
+
+URL and header fields are matched both as logged and after normalization, so a rule written for
+`' or 1=1` also catches `%27%20or%201%3D1`. Anything outside this subset (aggregations, `timeframe`,
+other log sources, unknown modifiers or fields) is **rejected with an error** instead of being skipped:
+a rule that loads but can never fire gives a false sense of coverage.
 
 ## How detection works
 
@@ -111,12 +155,14 @@ auth.log ─► parser ─► AuthEvent stream ─► detector (sliding window p
 src/logsentinel/
 ├── cli.py                 # command-line interface
 ├── models.py              # AuthEvent, HttpEvent, Alert, Severity
+├── sigma.py               # Sigma-style YAML rule loader and matcher
 ├── parsers/
 │   ├── ssh.py             # OpenSSH log parser
 │   └── web.py             # Apache/Nginx access log parser
 └── detectors/
     ├── bruteforce.py      # SSH brute force / spraying
     └── web.py             # SQLi, XSS, traversal, scanners
+rules/web/                 # example rules in Sigma format
 tests/                     # pytest suite (run in GitHub Actions)
 samples/                   # synthetic logs (RFC 5737 documentation IPs)
 scripts/gen_access_log.py  # regenerates samples/access.log (kept in sync by a test)
@@ -133,7 +179,7 @@ pytest -v && ruff check .
 
 - [x] SSH brute force / spraying / compromise detection
 - [x] Apache/Nginx parser with SQLi, XSS, path traversal and scanner detection
-- [ ] Rules in YAML (Sigma-inspired)
+- [x] Custom rules in Sigma format (web subset)
 - [ ] HTML report
 - [ ] IP reputation enrichment (AbuseIPDB)
 

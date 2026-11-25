@@ -1,0 +1,32 @@
+title: Probe for backup, dump or secrets files
+id: b2af5d2d-fa3a-4f0a-8d7e-6dec2e7e0b63
+status: experimental
+description: >
+  Requests for files that often leak credentials when left on a web server: config
+  backups, database dumps, site archives, environment files and version control data.
+author: LogSentinel
+date: 2026-11-25
+tags:
+  - attack.credential_access
+  - attack.t1552.001
+logsource:
+  category: webserver
+detection:
+  selection:
+    cs-uri-stem|endswith:
+      - .bak
+      - .old
+      - .swp
+      - .sql
+      - .tar.gz
+      - .zip
+      - /.env
+      - /.git/config
+      - /.git/HEAD
+      - /.htpasswd
+  filter_downloads:
+    cs-uri-stem|startswith: /downloads/
+  condition: selection and not filter_downloads
+falsepositives:
+  - Public archives served outside /downloads/
+level: medium

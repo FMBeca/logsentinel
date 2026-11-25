@@ -1,0 +1,33 @@
+title: Web shell access attempt
+id: 81e90d38-7eac-48ec-9c90-939a75ecabb4
+status: experimental
+description: >
+  Requests for well-known web shell file names, or PHP scripts called with a command
+  parameter. Attackers who upload a web shell come back to it this way; scanners also
+  probe for shells left behind by earlier compromises.
+author: LogSentinel
+date: 2026-11-25
+tags:
+  - attack.persistence
+  - attack.t1505.003
+logsource:
+  category: webserver
+detection:
+  selection_name:
+    cs-uri-stem|endswith:
+      - /shell.php
+      - /cmd.php
+      - /c99.php
+      - /r57.php
+      - /wso.php
+      - /b374k.php
+  selection_param:
+    cs-uri-stem|endswith: .php
+    cs-uri-query|contains:
+      - cmd=
+      - exec=
+      - command=
+  condition: 1 of selection_*
+falsepositives:
+  - Admin tools that legitimately take a "cmd" parameter
+level: high
