@@ -14,7 +14,7 @@ under the hood — the same ideas SIEMs like Splunk, Elastic or Wazuh apply at s
 |---|---|---|---|
 | SSH brute force (one user, many attempts) | LS-SSH-001 | [T1110.001](https://attack.mitre.org/techniques/T1110/001/) | ✅ |
 | SSH password spraying (many users) | LS-SSH-001 | [T1110.003](https://attack.mitre.org/techniques/T1110/003/) | ✅ |
-| Successful login after brute force (likely compromise) | LS-SSH-001 | [T1078](https://attack.mitre.org/techniques/T1078/) | ✅ |
+| Successful login after brute force (likely compromise) | LS-SSH-001 | T1110 + [T1078](https://attack.mitre.org/techniques/T1078/) | ✅ |
 | SQL injection attempts | LS-WEB-001 | [T1190](https://attack.mitre.org/techniques/T1190/) | ✅ |
 | Cross-site scripting (XSS) attempts | LS-WEB-002 | [T1190](https://attack.mitre.org/techniques/T1190/) | ✅ |
 | Path traversal / local file inclusion | LS-WEB-003 | [T1190](https://attack.mitre.org/techniques/T1190/) | ✅ |
@@ -38,7 +38,7 @@ Example output:
 
 ```
 [CRITICAL] Successful login after SSH brute force  (LS-SSH-001)
-    IP: 203.0.113.5  events: 6  MITRE: T1110.001
+    IP: 203.0.113.5  events: 6  MITRE: T1110.001, T1078
     2026-11-22 14:01:02 -> 2026-11-22 14:01:12
     users: root
     !! login succeeded as 'root'
@@ -139,7 +139,8 @@ a rule that loads but can never fire gives a false sense of coverage.
 2. **Sliding window** — for each source IP, failed attempts are kept in a time window.
    When the count crosses the threshold, an alert is raised.
 3. **Classify** — ≥3 distinct usernames ⇒ *password spraying*; otherwise *brute force*.
-4. **Correlate** — a successful login from an IP with an active alert escalates it to **CRITICAL**.
+4. **Correlate** — a successful login from an IP with an active alert escalates it to **CRITICAL**
+   and adds T1078 (Valid Accounts): the attacker now holds working credentials.
 
 ```
 auth.log ─► parser ─► AuthEvent stream ─► detector (sliding window per IP) ─► Alerts ─► table / JSON

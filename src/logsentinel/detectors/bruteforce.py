@@ -1,7 +1,7 @@
 """SSH brute-force detection using a sliding time window per source IP.
 
 MITRE ATT&CK: T1110 - Brute Force (T1110.001 Password Guessing,
-T1110.003 Password Spraying).
+T1110.003 Password Spraying), plus T1078 - Valid Accounts when a login then succeeds.
 """
 from __future__ import annotations
 
@@ -36,6 +36,9 @@ def detect(events: Iterable[AuthEvent], config: BruteForceConfig | None = None) 
                 a = alerts[ip]
                 a.severity = Severity.CRITICAL
                 a.title = "Successful login after SSH brute force"
+                # Keep the brute-force technique and add Valid Accounts: the attacker now
+                # holds working credentials, which is what the responder must act on.
+                a.mitre_technique = f"{a.mitre_technique}, T1078"
                 a.details["compromised_user"] = ev.username
                 a.details["success_time"] = ev.timestamp.isoformat()
             continue
