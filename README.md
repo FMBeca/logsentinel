@@ -29,9 +29,9 @@ under the hood — the same ideas SIEMs like Splunk, Elastic or Wazuh apply at s
 ```bash
 git clone https://github.com/FMBeca/logsentinel.git
 cd logsentinel
-pip install -e .
+pip install -e ".[yaml]"          # or just "." if you don't need Sigma rule files
 logsentinel ssh samples/auth.log --year 2026
-logsentinel web samples/access.log
+logsentinel web samples/access.log --rules rules/web --html report.html
 ```
 
 Example output:
@@ -83,6 +83,11 @@ logsentinel web samples/access.log --rules rules/web --html report.html
 `--html` writes a single file that opens in any browser, works offline and can be attached to a
 ticket: a summary by severity, the MITRE ATT&CK techniques seen (linked to attack.mitre.org) and every
 alert with its evidence. The console output and exit code stay the same.
+
+<p align="center">
+  <img src="docs/report-html.png" width="700"
+       alt="LogSentinel HTML report for samples/access.log: summary tiles with 5 high, 5 medium and 3 low alerts from 6 source IPs, MITRE ATT&CK technique links, and a SQL injection alert with source IP, timestamps, status codes and the request evidence">
+</p>
 
 Log lines are attacker-controlled, so a report that pasted them into HTML would run an attacker's XSS
 payload in the analyst's browser. Every value is HTML-escaped, and the page carries a
@@ -198,7 +203,8 @@ pytest -v && ruff check .
 - [x] Apache/Nginx parser with SQLi, XSS, path traversal and scanner detection
 - [x] Custom rules in Sigma format (web subset)
 - [x] HTML report
-- [ ] IP reputation enrichment (AbuseIPDB)
+- [ ] IP reputation enrichment (AbuseIPDB, opt-in, needs an API key)
+- [ ] Sigma rules for SSH / Linux auth logs
 
 ## License
 
