@@ -11,10 +11,11 @@ from collections.abc import Iterable, Iterator
 from datetime import datetime
 
 from logsentinel.models import LogLine
-from logsentinel.parsers.ssh import parse_timestamp
+from logsentinel.parsers.ssh import TIMESTAMP, parse_timestamp
 
 # Nov 22 14:08:00 srv1 sshd[1600]: Did not receive identification string from 203.0.113.80 port 51515
-_LINE = re.compile(r"^(?P<ts>\w{3}\s+\d{1,2}\s\d{2}:\d{2}:\d{2})\s(?P<host>\S+)\s(?P<prog>[^\s:\[]+)(?:\[\d+\])?:\s?(?P<msg>.*)$")
+# 2026-11-22T14:08:00.123456+00:00 srv1 sshd[1600]: ...   (RFC 3339, current Ubuntu / Debian)
+_LINE = re.compile(rf"^{TIMESTAMP}\s(?P<host>\S+)\s(?P<prog>[^\s:\[]+)(?:\[\d+\])?:\s?(?P<msg>.*)$")
 
 # Where sshd and PAM put the remote address, most specific first.
 _IP = [
