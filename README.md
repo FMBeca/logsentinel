@@ -64,16 +64,24 @@ sudo logsentinel ssh /var/log/auth.log          # Debian/Ubuntu
 sudo logsentinel ssh /var/log/secure --json     # RHEL/Fedora, JSON output
 sudo logsentinel web /var/log/nginx/access.log
 sudo logsentinel web /var/log/apache2/access.log --json
+
+# Systems without /var/log/auth.log (journald only, e.g. a minimal Debian 12):
+journalctl -u ssh -o short-iso --no-pager | logsentinel ssh -      # service "sshd" on RHEL/Fedora
 ```
+
+Syslog timestamps are read in both formats: classic (`Nov 22 14:01:02`, no year, so `--year`
+sets it) and RFC 3339 (`2026-11-22T14:01:02.123456+00:00`), the rsyslog default on current Ubuntu
+and Debian. A log whose lines are not recognised at all is reported as an error instead of
+"No threats detected".
 
 | Command | Options |
 |---|---|
-| `ssh` | `--threshold N` (default 5), `--window SECONDS` (default 300), `--year YYYY` |
+| `ssh` | `--threshold N` (default 5), `--window SECONDS` (default 300), `--year YYYY` (classic timestamps only) |
 | `web` | `--scan-threshold N` distinct 403/404 paths (default 20), `--scan-window SECONDS` (default 60) |
 
 Both accept `--rules PATH` (repeatable), `--enrich`, `--json`, `--no-color`, `--html FILE` and `-` to read from stdin.
 The exit code is `1` when threats are found, so it can be used in scripts and cron jobs,
-and `2` when a rule file cannot be loaded or `--enrich` has no API key.
+and `2` when a rule file cannot be loaded, `--enrich` has no API key or the log format is not recognised.
 
 ## HTML report
 
@@ -194,7 +202,8 @@ a rule that loads but can never fire gives a false sense of coverage.
 
 ### SSH
 
-1. **Parse** — regexes normalize `sshd` lines into `AuthEvent` objects (time, IP, user, success).
+1. **Parse** — regexes normalize `sshd` lines (classic or RFC 3339 timestamps) into `AuthEvent`
+   objects (time, IP, user, success).
 2. **Sliding window** — for each source IP, failed attempts are kept in a time window.
    When the count crosses the threshold, an alert is raised.
 3. **Classify** — ≥3 distinct usernames ⇒ *password spraying*; otherwise *brute force*.
