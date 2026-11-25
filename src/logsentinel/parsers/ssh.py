@@ -16,7 +16,9 @@ from logsentinel.models import AuthEvent
 # 2026-11-22T14:01:02.123456+00:00 srv1 sshd[1234]: Failed password for root from 203.0.113.5 port 52211 ssh2
 TIMESTAMP = (r"(?P<ts>\w{3}\s+\d{1,2}\s\d{2}:\d{2}:\d{2}"
              r"|\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)")
-_PREFIX = rf"^{TIMESTAMP}\s(?P<host>\S+)\ssshd\[\d+\]:\s"
+# Since OpenSSH 9.8 the per-connection work runs in separate binaries, so login attempts are
+# logged by "sshd-session" (and "sshd-auth" in 10.x) instead of "sshd".
+_PREFIX = rf"^{TIMESTAMP}\s(?P<host>\S+)\ssshd(?:-session|-auth)?\[\d+\]:\s"
 
 _PATTERNS = [
     (re.compile(_PREFIX + r"Failed \S+ for (?P<invalid>invalid user )?(?P<user>\S+) from (?P<ip>[\d.:a-fA-F]+)"), False),

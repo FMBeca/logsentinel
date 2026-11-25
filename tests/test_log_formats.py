@@ -64,6 +64,38 @@ def test_syslog_parser_reads_rfc3339_lines():
     assert entry and entry.program == "login" and entry.timestamp.year == 2026
 
 
+# Real lines from Ubuntu 26.04 with OpenSSH 10.2 (host renamed): RFC 3339 timestamps, and the
+# attempts are logged by "sshd-session", not "sshd". Both broke detection before v1.1.1.
+REAL_OPENSSH_10 = """\
+2026-11-25T19:06:58.095519+00:00 srv1 sshd[1165]: Server listening on 0.0.0.0 port 22.
+2026-11-25T19:07:53.811978+00:00 srv1 sshd-session[1178]: Invalid user ghost from 127.0.0.1 port 48680
+2026-11-25T19:07:56.260748+00:00 srv1 sshd-session[1178]: pam_unix(sshd:auth): check pass; user unknown
+2026-11-25T19:07:58.478552+00:00 srv1 sshd-session[1178]: Failed password for invalid user ghost from 127.0.0.1 port 48680 ssh2
+2026-11-25T19:08:03.925685+00:00 srv1 sshd-session[1178]: Failed password for invalid user ghost from 127.0.0.1 port 48680 ssh2
+2026-11-25T19:08:08.614058+00:00 srv1 sshd-session[1178]: Failed password for invalid user ghost from 127.0.0.1 port 48680 ssh2
+2026-11-25T19:08:08.790897+00:00 srv1 sshd-session[1178]: Connection closed by invalid user ghost 127.0.0.1 port 48680 [preauth]
+2026-11-25T19:09:10.100000+00:00 srv1 sshd-session[1190]: Failed password for invalid user ghost from 127.0.0.1 port 48700 ssh2
+2026-11-25T19:09:15.100000+00:00 srv1 sshd-session[1190]: Failed password for invalid user ghost from 127.0.0.1 port 48700 ssh2
+"""
+
+
+@pytest.mark.parametrize("program", ["sshd", "sshd-session", "sshd-auth"])
+def test_openssh_program_names(program):
+    line = f"2026-11-25T19:07:58.478552+00:00 srv1 {program}[1178]: Failed password for root from 192.0.2.9 port 1 ssh2"
+    assert ssh.parse_line(line) is not None
+
+
+def test_other_programs_are_not_login_events():
+    line = "2026-11-25T19:07:58.478552+00:00 srv1 sshd-keygen[1]: Failed password for root from 192.0.2.9 port 1 ssh2"
+    assert ssh.parse_line(line) is None
+
+
+def test_real_openssh_10_log():
+    (a,) = detect(ssh.parse_lines(REAL_OPENSSH_10.splitlines()))
+    assert a.source_ip == "127.0.0.1" and a.count == 5
+    assert a.details["usernames"] == ["ghost"]
+
+
 # ------------------------------------------------------------- unrecognised logs
 
 @pytest.mark.parametrize("command", ["ssh", "web"])
