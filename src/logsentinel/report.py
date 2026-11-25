@@ -42,6 +42,15 @@ def _mitre_cell(text: str) -> str:
     return ", ".join(links) if links else _e(text)
 
 
+def reputation_summary(rep: dict) -> str:
+    """One line, shared by the console and the HTML report."""
+    parts = [f"{rep.get('score', 0)}/100 abuse score", f"{rep.get('reports', 0)} reports"]
+    parts += [str(v) for v in (rep.get("country"), rep.get("isp")) if v]
+    if rep.get("tor"):
+        parts.append("Tor exit node")
+    return " · ".join(parts) + f" ({rep.get('source', 'AbuseIPDB')})"
+
+
 def _alert(a: Alert) -> str:
     d = a.details
     rows = [
@@ -58,6 +67,9 @@ def _alert(a: Alert) -> str:
         rows.append(("Status", ", ".join(f"{_e(k)} &times; {_e(v)}" for k, v in codes)))
     if d.get("user_agent"):
         rows.append(("User-Agent", f"<code>{_e(d['user_agent'])}</code>"))
+    if d.get("reputation"):
+        # Third-party text (ISP names...) is untrusted too: escaped like the log content.
+        rows.append(("Reputation", _e(reputation_summary(d["reputation"]))))
     grid = "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in rows)
 
     warn = ""
